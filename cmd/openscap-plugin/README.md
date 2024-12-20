@@ -58,5 +58,5 @@ After the scan, check the files in "user_workspace" directory.
 Tests are organized within each package. Run tests using:
 
 ```bash
-make test-units
+make test-unit
 ```
