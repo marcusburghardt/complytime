@@ -400,6 +400,38 @@ func TestPopulateProfileVariables(t *testing.T) {
 	}
 }
 
+// TestPopulateProfileRules tests the populateProfileVariables function.
+func TestPopulateProfileRules(t *testing.T) {
+	doc, _ := LoadDsTest(t, "ssg-rhel-ds.xml")
+	tests := []struct {
+		dsProfileID string
+		wantErr     bool
+	}{
+		// Declaration of the tt structure types for testing data
+		{"xccdf_org.ssgproject.content_profile_test_profile", false},
+		{"xccdf_org.ssgproject.content_profile_absent", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.dsProfileID, func(t *testing.T) {
+			dsProfile, err := getDsProfile(doc, tt.dsProfileID)
+			if err != nil {
+				t.Fatalf("failed to get profile: %v", err)
+			}
+
+			parsedProfile := &xccdf.ProfileElement{}
+			result, err := populateProfileRules(dsProfile, parsedProfile)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("populateProfileRules() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			// Using Selections to reference SelectElement[] from the parsedProfile
+			if result != nil && result.Selections == nil {
+				t.Errorf("got nil rules, want non-nil")
+			}
+		})
+	}
+}
+
 // TestInitProfile tests the initProfile function.
 func TestInitProfile(t *testing.T) {
 	doc, _ := LoadDsTest(t, "ssg-rhel-ds.xml")
@@ -686,6 +718,37 @@ func TestResolveDsVariableOptions(t *testing.T) {
 			}
 			if !tt.wantErr && !compareProfileElements(result, tt.expected) {
 				t.Errorf("got %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestGetDsSelected tests the GetDsProfileRules function.
+func TestGetDsProfileRules(t *testing.T) {
+	tests := []struct {
+		dsPath   string
+		expected int
+		wantErr  bool
+	}{
+		// Declaration of the structure types for test data
+		{filepath.Join(testDataDir, "ssg-rhel-ds.xml"), 71, false},
+		{filepath.Join(testDataDir, "absent.xml"), 0, true},
+		{filepath.Join(testDataDir, "invalid.xml"), 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.dsPath, func(t *testing.T) {
+			result, err := GetDsProfileRules(tt.dsPath)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetDsProfileRules() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if len(result) != tt.expected {
+				t.Errorf("got %d, want %d", len(result), tt.expected)
+			}
+			for _, rule := range result {
+				if rule.Selected == false {
+					t.Errorf("got no rule selected, want a selected rule")
+				}
 			}
 		})
 	}
