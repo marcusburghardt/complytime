@@ -3,9 +3,9 @@
 package xccdf
 
 import (
-	"encoding/xml"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/ComplianceAsCode/compliance-operator/pkg/xccdf"
 	"github.com/antchfx/xmlquery"
@@ -24,11 +24,12 @@ type DsVariables struct {
 	Options     []DsVariableOptions
 }
 
-type SelectElement struct {
-	XMLName  xml.Name `xml:"xccdf-1.2:select"`
-	IDRef    string   `xml:"idref,attr"`
-	Selected bool     `xml:"selected,attr"`
-}
+// Existing struct in compliance-operator compliance-operator/blob/master/pkg/xccdf/tailoring.go
+//type SelectElement struct {
+//	XMLName  xml.Name `xml:"xccdf-1.2:select"`
+//	IDRef    string   `xml:"idref,attr"`
+//	Selected bool     `xml:"selected,attr"`
+//}
 
 func loadDataStream(dsPath string) (*xmlquery.Node, error) {
 	file, err := os.Open(dsPath)
@@ -183,16 +184,20 @@ func populateProfileRules(dsProfile *xmlquery.Node, parsedProfile *xccdf.Profile
 		// change occurrences of ruleSelector to ruleSelected for alignment with selected attribute
 		ruleSelected, err := getDsElementAttrValue(rule, "selected")
 		if err != nil {
-			return parsedProfile, fmt.Errorf("error getting value of 'selected' attribute: %s", err)
+			return nil, fmt.Errorf("error getting value of 'selected' attribute: %s", err)
 		}
-
+		selectedBoolean, err := strconv.ParseBool(ruleSelected)
+		if err != nil {
+			return nil, fmt.Errorf("error converting the 'selected' attribute from string to boolean: %s", err)
+		}
 		parsedProfile.Selections = append(parsedProfile.Selections, xccdf.SelectElement{
 			IDRef:    ruleIdRef,
-			Selected: ruleSelected,
+			Selected: selectedBoolean,
 		})
 	}
 	return parsedProfile, nil
 }
+
 func initProfile(dsProfile *xmlquery.Node, dsProfileId string) (*xccdf.ProfileElement, error) {
 	parsedProfile := new(xccdf.ProfileElement)
 	parsedProfile.ID = dsProfileId
@@ -335,7 +340,7 @@ func ResolveDsVariableOptions(profile *xccdf.ProfileElement, variables []DsVaria
 
 // Getting rule information
 // Copied from https://github.com/ComplianceAsCode/compliance-operator/blob/fed54b4b761374578016d79d97bcb7636bf9d920/pkg/utils/parse_arf_result.go#L170
-func GetDsProfileRules(dsPath string) ([]SelectElement, error) {
+func GetDsProfileRules(dsPath string) ([]xccdf.SelectElement, error) {
 	dsDom, err := loadDataStream(dsPath)
 	if err != nil {
 		return nil, fmt.Errorf("error loading datastream: %s", err)
@@ -346,21 +351,24 @@ func GetDsProfileRules(dsPath string) ([]SelectElement, error) {
 		return nil, fmt.Errorf("error getting selected rules from datastream: %s", err)
 	}
 
-	dsSelectedValues := []SelectElement{}
+	dsSelectedValues := []xccdf.SelectElement{}
 	for _, rule := range dsRules {
 		ruleId, err := getDsElementAttrValue(rule, "id")
 		if err != nil {
 			return nil, fmt.Errorf("error getting value of 'id' attribute: %s", err)
 		}
-
-		ruleSelected, err := getDsElementAttrValue(rule, "xccdf-1.2:select")
+		ruleSelected, err := getDsElementAttrValue(rule, "selected")
 		if err != nil {
 			return nil, fmt.Errorf("error getting selected rule from datastream: %s", err)
 		}
+		selectedBoolean, err := strconv.ParseBool(ruleSelected)
+		if err != nil {
+			return nil, fmt.Errorf("error converting 'selected' rule value from string to boolean: %s", err)
+		}
 
-		dsSelectedValues = append(dsSelectedValues, SelectElement{
+		dsSelectedValues = append(dsSelectedValues, xccdf.SelectElement{
 			IDRef:    ruleId,
-			Selected: ruleSelected.InnerText(),
+			Selected: selectedBoolean,
 		})
 	}
 	return dsSelectedValues, nil
