@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -114,13 +115,26 @@ func runScan(cmd *cobra.Command, opts *scanOptions) error {
 	}
 
 	var allImplementations []oscalTypes.ControlImplementationSet
+	var profileHref string
 	for _, compDef := range cfg.ComponentDefinitions {
 		for _, component := range *compDef.Components {
 			if component.ControlImplementations == nil {
 				continue
 			}
-			allImplementations = append(allImplementations, *component.ControlImplementations...)
-
+			for _, implementation := range *component.ControlImplementations {
+				frameworkShortName, found := settings.GetFrameworkShortName(implementation)
+				fmt.Println(frameworkShortName)
+				fmt.Println(frameworkProp.Value)
+				// If the framework property value match the assessment plan framework property values
+				// this is the correct control source.
+				if found && frameworkShortName == frameworkProp.Value {
+					profileHref = implementation.Source
+					fmt.Println(profileHref)
+					// The implementations would have been filtered later in settings.Framework, but no need to add extra
+					// implementations that are not needed to the slice.
+					allImplementations = append(allImplementations, *component.ControlImplementations...)
+				}
+			}
 		}
 	}
 
@@ -142,8 +156,15 @@ func runScan(cmd *cobra.Command, opts *scanOptions) error {
 	}
 	outputFlag, _ := cmd.Flags().GetBool("output")
 	if outputFlag {
-		// Handle MD (Markdown) output
-		catalog, err := complytime.LoadCatalogSource(appDir)
+		profile, err := complytime.LoadProfile(appDir, profileHref)
+		if err != nil {
+			return err
+		}
+
+		if len(profile.Imports) != 1 {
+			return errors.New("profile imports must be one")
+		}
+		catalog, err := complytime.LoadCatalogSource(appDir, profile.Imports[0].Href)
 		if err != nil {
 			return err
 		}
