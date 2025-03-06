@@ -167,6 +167,7 @@ func runScan(cmd *cobra.Command, opts *scanOptions) error {
 		}
 		filePath := filepath.Join(opts.complyTimeOpts.UserWorkspace, assessmentResultsLocationMd)
 		cleanedPath := filepath.Clean(filePath)
+		// This was updated by CPLYTM-273 and needs to be adapted
 		templateValues, err := framework.CreateTemplateValues(*catalog, *assessmentPlan, assessmentResults)
 		if err != nil {
 			return err
