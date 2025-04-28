@@ -14,19 +14,19 @@ import (
 
 var testDataDir = filepath.Join("..", "..", "..", "internal", "complytime", "testdata", "openscap")
 
-// Helper function to load Datastream XML file.
+// Helper function to load Datastream XML file. It is used by multiple tests in xccdf package.
 func LoadDsTest(t *testing.T, dsTestFile string) (*xmlquery.Node, error) {
 	dsTestFilePath := filepath.Join(testDataDir, dsTestFile)
 	file, err := os.Open(dsTestFilePath)
 	if err != nil {
-		t.Fatalf("error opening datastream file: %s", err)
+		t.Fatalf("error opening datastream file: %v", err)
 		return nil, err
 	}
 	defer file.Close()
 
 	dsDom, err := xmlquery.Parse(file)
 	if err != nil {
-		t.Fatalf("error parsing datastream file: %s", err)
+		t.Fatalf("error parsing datastream file: %v", err)
 		return nil, err
 	}
 
@@ -69,6 +69,48 @@ func TestGetDsProfileID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.profileId, func(t *testing.T) {
 			result := getDsProfileID(tt.profileId)
+			if result != tt.expected {
+				t.Errorf("got %s, want %s", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestGetDsRuleID tests the getDsRuleID function.
+func TestGetDsRuleID(t *testing.T) {
+	tests := []struct {
+		ruleId   string
+		expected string
+	}{
+		{"test_rule", "xccdf_org.ssgproject.content_rule_test_rule"},
+		{"rule1", "xccdf_org.ssgproject.content_rule_rule1"},
+		{"", "xccdf_org.ssgproject.content_rule_"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.ruleId, func(t *testing.T) {
+			result := getDsRuleID(tt.ruleId)
+			if result != tt.expected {
+				t.Errorf("got %s, want %s", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestGetDsVarID tests the getDsVarID function.
+func TestGetDsVarID(t *testing.T) {
+	tests := []struct {
+		varId    string
+		expected string
+	}{
+		{"test_var", "xccdf_org.ssgproject.content_value_test_var"},
+		{"var1", "xccdf_org.ssgproject.content_value_var1"},
+		{"", "xccdf_org.ssgproject.content_value_"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.varId, func(t *testing.T) {
+			result := getDsVarID(tt.varId)
 			if result != tt.expected {
 				t.Errorf("got %s, want %s", result, tt.expected)
 			}
@@ -400,6 +442,37 @@ func TestPopulateProfileVariables(t *testing.T) {
 	}
 }
 
+// TestPopulateProfileRules tests the populateProfileVariables function.
+func TestPopulateProfileRules(t *testing.T) {
+	doc, _ := LoadDsTest(t, "ssg-rhel-ds.xml")
+	tests := []struct {
+		dsProfileID string
+		wantErr     bool
+	}{
+		{"xccdf_org.ssgproject.content_profile_test_profile", false},
+		{"xccdf_org.ssgproject.content_profile_absent", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.dsProfileID, func(t *testing.T) {
+			dsProfile, err := getDsProfile(doc, tt.dsProfileID)
+			if err != nil {
+				t.Fatalf("failed to get profile: %v", err)
+			}
+
+			parsedProfile := &xccdf.ProfileElement{}
+			result, err := populateProfileRules(dsProfile, parsedProfile)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("populateProfileRules() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if result != nil && result.Selections == nil {
+				t.Errorf("got nil rules, want non-nil")
+			}
+		})
+	}
+}
+
 // TestInitProfile tests the initProfile function.
 func TestInitProfile(t *testing.T) {
 	doc, _ := LoadDsTest(t, "ssg-rhel-ds.xml")
@@ -435,6 +508,68 @@ func TestInitProfile(t *testing.T) {
 			}
 			if result.Description != nil && result.Description.Value != tt.expectedDescription {
 				t.Errorf("got description %s, want %s", result.Description.Value, tt.expectedDescription)
+			}
+		})
+	}
+}
+
+// TestGetDsProfile tests the GetDsProfile function.
+func TestGetDsProfile(t *testing.T) {
+	tests := []struct {
+		profileId string
+		dsPath    string
+		expected  *xccdf.ProfileElement
+		wantErr   bool
+	}{
+		{
+			profileId: "test_profile",
+			dsPath:    filepath.Join(testDataDir, "ssg-rhel-ds.xml"),
+			expected: &xccdf.ProfileElement{
+				ID: "xccdf_org.ssgproject.content_profile_test_profile",
+				Title: &xccdf.TitleOrDescriptionElement{
+					Override: true,
+					Value:    "Test Profile",
+				},
+				Description: &xccdf.TitleOrDescriptionElement{
+					Override: true,
+					Value:    "This profile is only used for Unit Tests",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			profileId: "absent_profile",
+			dsPath:    filepath.Join(testDataDir, "ssg-rhel-ds.xml"),
+			expected:  nil,
+			wantErr:   true,
+		},
+		{
+			profileId: "absent_datastream",
+			dsPath:    filepath.Join(testDataDir, "absent.xml"),
+			expected:  nil,
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.profileId, func(t *testing.T) {
+			result, err := GetDsProfile(tt.profileId, tt.dsPath)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetDsProfile() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if result != nil && tt.expected != nil {
+				if result.ID != tt.expected.ID {
+					t.Errorf("got ID %s, want %s", result.ID, tt.expected.ID)
+				}
+				if result.Title != nil && result.Title.Value != tt.expected.Title.Value {
+					t.Errorf("got title %s, want %s", result.Title.Value, tt.expected.Title.Value)
+				}
+				if result.Description != nil && result.Description.Value != tt.expected.Description.Value {
+					t.Errorf("got description %s, want %s", result.Description.Value, tt.expected.Description.Value)
+				}
+			} else if result != tt.expected {
+				t.Errorf("got %v, want %v", result, tt.expected)
 			}
 		})
 	}
@@ -691,92 +826,40 @@ func TestResolveDsVariableOptions(t *testing.T) {
 	}
 }
 
-// TestGetDsProfile tests the GetDsProfile function.
-func TestGetDsProfile(t *testing.T) {
+// TestGetDsRules tests the GetDsRules function.
+func TestGetDsRules(t *testing.T) {
 	tests := []struct {
-		profileId string
-		dsPath    string
-		expected  *xccdf.ProfileElement
-		wantErr   bool
+		dsPath   string
+		expected int
+		wantErr  bool
 	}{
-		{
-			profileId: "test_profile",
-			dsPath:    filepath.Join(testDataDir, "ssg-rhel-ds.xml"),
-			expected: &xccdf.ProfileElement{
-				ID: "xccdf_org.ssgproject.content_profile_test_profile",
-				Title: &xccdf.TitleOrDescriptionElement{
-					Override: true,
-					Value:    "Test Profile",
-				},
-				Description: &xccdf.TitleOrDescriptionElement{
-					Override: true,
-					Value:    "This profile is only used for Unit Tests",
-				},
-			},
-			wantErr: false,
-		},
-		{
-			profileId: "absent_profile",
-			dsPath:    filepath.Join(testDataDir, "ssg-rhel-ds.xml"),
-			expected:  nil,
-			wantErr:   true,
-		},
-		{
-			profileId: "absent_datastream",
-			dsPath:    filepath.Join(testDataDir, "absent.xml"),
-			expected:  nil,
-			wantErr:   true,
-		},
+		{filepath.Join(testDataDir, "ssg-rhel-ds.xml"), 376, false},
+		{filepath.Join(testDataDir, "absent.xml"), 0, true},
+		{filepath.Join(testDataDir, "invalid.xml"), 0, true},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.profileId, func(t *testing.T) {
-			result, err := GetDsProfile(tt.profileId, tt.dsPath)
+		t.Run(tt.dsPath, func(t *testing.T) {
+			result, err := GetDsRules(tt.dsPath)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("GetDsProfile() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("GetDsRules() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if result != nil && tt.expected != nil {
-				if result.ID != tt.expected.ID {
-					t.Errorf("got ID %s, want %s", result.ID, tt.expected.ID)
-				}
-				if result.Title != nil && result.Title.Value != tt.expected.Title.Value {
-					t.Errorf("got title %s, want %s", result.Title.Value, tt.expected.Title.Value)
-				}
-				if result.Description != nil && result.Description.Value != tt.expected.Description.Value {
-					t.Errorf("got description %s, want %s", result.Description.Value, tt.expected.Description.Value)
-				}
-			} else if result != tt.expected {
-				t.Errorf("got %v, want %v", result, tt.expected)
+			if len(result) != tt.expected {
+				t.Errorf("got %d rules, want %d", len(result), tt.expected)
 			}
-		})
-	}
-}
-
-// TestGetDsProfileTitle tests the GetDsProfileTitle function.
-// It also uses the getDsElement function with some additional logic specific for profile titles.
-func TestGetDsProfileTitle(t *testing.T) {
-	tests := []struct {
-		profileId string
-		dsPath    string
-		expected  string
-		wantErr   bool
-	}{
-		{"test_profile", filepath.Join(testDataDir, "ssg-rhel-ds.xml"), "Test Profile", false},
-		{"test_profile_no_title", filepath.Join(testDataDir, "ssg-rhel-ds.xml"), "", false},
-		{"absent_profile", filepath.Join(testDataDir, "ssg-rhel-ds.xml"), "", true},
-		{"invalid_profile", filepath.Join(testDataDir, "absent.xml"), "", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.profileId, func(t *testing.T) {
-			result, err := GetDsProfileTitle(tt.profileId, tt.dsPath)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetDsProfileTitle() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if result != tt.expected {
-				t.Errorf("got %s, want %s", result, tt.expected)
+			if !tt.wantErr {
+				for _, rule := range result {
+					if rule.ID == "" {
+						t.Errorf("got rule with empty ID: %v", rule)
+					}
+					if rule.Title == "" {
+						t.Errorf("got rule with empty title: %v", rule)
+					}
+					if rule.Description == "" {
+						t.Errorf("got rule with empty description: %v", rule)
+					}
+				}
 			}
 		})
 	}
